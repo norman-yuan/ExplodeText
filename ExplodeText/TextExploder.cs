@@ -19,8 +19,6 @@ namespace ExplodeText
 {
     public class TextExploder
     {
-        private readonly Dictionary<ObjectId, string> _errDict = new Dictionary<ObjectId, string>();
-
         private Document _dwg = null;
         private Database _db = null;
         private Editor _ed = null;
