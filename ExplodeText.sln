@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.7.34202.233
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExplodeText", "ExplodeText\ExplodeText.csproj", "{F917CE2B-0245-46F5-ABDE-7173A209D10C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F917CE2B-0245-46F5-ABDE-7173A209D10C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F917CE2B-0245-46F5-ABDE-7173A209D10C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F917CE2B-0245-46F5-ABDE-7173A209D10C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F917CE2B-0245-46F5-ABDE-7173A209D10C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {187288B2-3E7C-4AD9-8B33-BE1B9EB062BA}
+	EndGlobalSection
+EndGlobal
