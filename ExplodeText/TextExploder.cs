@@ -7,13 +7,8 @@ using CadApp = Autodesk.AutoCAD.ApplicationServices.Application;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.IO;
-using System.Runtime.InteropServices;
-using static System.Net.Mime.MediaTypeNames;
 using Autodesk.AutoCAD.Colors;
-using System.Reflection.Emit;
 
 namespace ExplodeText
 {
@@ -86,7 +81,9 @@ namespace ExplodeText
             string wmfFilePath = null;
 
             // generate WMF image file
-            if (!ExportWmfImage(txtEntId, out wmfFileName, out wmfFilePath, out string layer, out _rotation)) return null;
+            if (!ExportWmfImage(txtEntId, 
+                out wmfFileName, out wmfFilePath, 
+                out string layer, out _rotation)) return null;
 
             if (string.IsNullOrEmpty(_layer))
             {
@@ -193,7 +190,9 @@ namespace ExplodeText
                     // mirror the text in order for TrueFont text to be converted to curves
                     using (var mirrorLine = new Line3d())
                     {
-                        mirrorLine.Set(txt.Position, new Point3d(txt.Position.X, txt.Position.Y+1000, txt.Position.Z));
+                        mirrorLine.Set(
+                            txt.Position, 
+                            new Point3d(txt.Position.X, txt.Position.Y+1000, txt.Position.Z));
                         txt.TransformBy(Matrix3d.Mirroring(mirrorLine));
                     }
 
@@ -224,7 +223,9 @@ namespace ExplodeText
         }
 
         private bool ExportWmfImage(
-            ObjectId txtId, out string wmfFileName, out string wmfFilePath, out string layer, out double rotation)
+            ObjectId txtId, 
+            out string wmfFileName, out string wmfFilePath, 
+            out string layer, out double rotation)
         {
             var exportOk = true;
 
@@ -334,7 +335,8 @@ namespace ExplodeText
             foreach (dynamic ent in selectionSet)
             {
                 string handleString = ent.Handle;
-                var handle=new Handle(long.Parse(handleString, System.Globalization.NumberStyles.HexNumber));
+                var handle=new Handle(
+                    long.Parse(handleString, System.Globalization.NumberStyles.HexNumber));
                 if (_db.TryGetObjectId(handle, out ObjectId id))
                 {
                     var dxfName = id.ObjectClass.DxfName.ToUpper();
@@ -457,7 +459,9 @@ namespace ExplodeText
 
             if (blks.Count>0)
             {
-                return (from b in blks orderby b.ObjectId.Handle.Value descending select b).First();
+                return (from b in blks 
+                        orderby b.ObjectId.Handle.Value descending 
+                        select b).First();
             }
             else
             {
@@ -490,32 +494,15 @@ namespace ExplodeText
             return true;
         }
 
-        private BlockReference FindImportedWmfBlockReference(
-            string blkName, Transaction tran)
-        {
-            var blkId = ObjectId.Null;
-
-            var space = (BlockTableRecord)tran.GetObject(
-                _db.CurrentSpaceId, OpenMode.ForRead);
-            foreach (ObjectId entId in space)
-            {
-                if (entId.ObjectClass.DxfName.ToUpper()=="INSERT")
-                {
-                    var blk=(BlockReference)tran.GetObject(entId, OpenMode.ForRead);
-                    if (blk.Name.ToUpper() == blkName.ToUpper()) return blk;
-                }
-            }
-
-            return null;
-        }
-
         private List<ObjectId> ConvertWmfBlockReferenceToCurves(
             BlockReference blkRef, BlockTableRecord space, Transaction tran)
         {
             // mirror and rotate the block reference before exploding it
             using (var mirrorLine = new Line3d())
             {
-                mirrorLine.Set(blkRef.Position, new Point3d(blkRef.Position.X, blkRef.Position.Y + 1000, blkRef.Position.Z));
+                mirrorLine.Set(
+                    blkRef.Position, 
+                    new Point3d(blkRef.Position.X, blkRef.Position.Y + 1000, blkRef.Position.Z));
                 blkRef.TransformBy(Matrix3d.Mirroring(mirrorLine));
             }
             blkRef.TransformBy(Matrix3d.Rotation(_rotation, Vector3d.ZAxis, blkRef.Position));
