@@ -13,6 +13,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using static System.Net.Mime.MediaTypeNames;
 using Autodesk.AutoCAD.Colors;
+using System.Reflection.Emit;
 
 namespace ExplodeText
 {
@@ -24,34 +25,75 @@ namespace ExplodeText
         private Database _db = null;
         private Editor _ed = null;
 
-        private ObjectId _textId = ObjectId.Null;
         private Extents3d _txtExtents = new Extents3d();
         private List<string> _existingWmfBlockNames;
-        private string _layer = "0";
+        private string _layer = null;
         private double _rotation = 0;
-        //private string _textValue = "";
 
-        private ObjectIdCollection _textCurveIds = new ObjectIdCollection();
-
-        public bool ExplodeText(
-            Document dwg, ObjectId txtEntId, 
-            string explodeToLayer=null, bool eraseTextEnt = true)
+        public TextExploder(Document dwg, string explodeToLayer=null)
         {
-            //if (txtEntId.ObjectClass.DxfName.ToUpper() != "TEXT")
-            //{
-            //    _errDict.Add(txtEntId, "Not a DBText.");
-            //}
-
-            _textId= txtEntId;
-            _dwg = dwg;
-            _ed = _dwg.Editor;
+            _dwg= dwg;
             _db = _dwg.Database;
+            _ed = _dwg.Editor;
+            _layer= explodeToLayer;
+
+            if (!string.IsNullOrEmpty(_layer) && !LayerExists(_layer))
+            {
+                throw new ArgumentException(
+                    $"Designate layer does not exist: {_layer}");
+            }
+        }
+
+        public List<ObjectId> ExplodeMText(ObjectId mtextEntId)
+        {
+            if (mtextEntId.ObjectClass.DxfName.ToUpper() != "MTEXT")
+            {
+                throw new ArgumentException("No MText entity.");
+            }
+
+            var resultCurves = new List<ObjectId>();
+
+            var txtIds = ExplodeMTextToDbTexts(mtextEntId);
+
+            foreach (var txtId in txtIds)
+            {
+                var curveIds = DoDBTextExplode(txtId);
+                if (curveIds!=null)
+                {
+                    resultCurves.AddRange(curveIds);
+                }
+            }
+
+            return resultCurves;
+        }
+
+        public List<ObjectId> ExplodeDBText(ObjectId txtEntId)
+        {
+            if (txtEntId.ObjectClass.DxfName.ToUpper() != "TEXT")
+            {
+                throw new ArgumentException("No DBText entity.");
+            }
+
+            var curveIds = DoDBTextExplode(txtEntId);
+            return curveIds;
+        }
+
+        #region private methods: misc
+
+        private List<ObjectId> DoDBTextExplode(ObjectId txtEntId)
+        {
+            List<ObjectId> curveIds = null;
 
             string wmfFileName = null;
             string wmfFilePath = null;
 
             // generate WMF image file
-            if (!ExportWmfImage(_textId, out wmfFileName, out wmfFilePath)) return false;
+            if (!ExportWmfImage(txtEntId, out wmfFileName, out wmfFilePath, out string layer, out _rotation)) return null;
+
+            if (string.IsNullOrEmpty(_layer))
+            {
+                _layer = layer;
+            }
 
             // import the WMF image as block
             var importFile = $"{wmfFilePath}{wmfFileName}.wmf";
@@ -59,7 +101,7 @@ namespace ExplodeText
             {
                 if (!ImportWmfImage(importFile, _txtExtents.MinPoint))
                 {
-                    return false;
+                    return null;
                 }
             }
             finally
@@ -68,28 +110,59 @@ namespace ExplodeText
             }
 
             // process WMF image block
-            if (!string.IsNullOrEmpty(explodeToLayer) &&
-                LayerExists(explodeToLayer))
-            {
-                _layer = explodeToLayer;
-            }
-
             _existingWmfBlockNames = GetExistingWmfBlockNames();
-            if (!PostWmfImportWork()) return false;
+            curveIds = PostWmfImportWork();
 
             // erase original text
-            if (eraseTextEnt)
+            if (curveIds != null)
             {
-                using (var tran = _db.TransactionManager.StartTransaction())
-                {
-                    var txt = (DBText)tran.GetObject(_textId, OpenMode.ForWrite);
-                    txt.Erase();
-                    tran.Commit();
-                }
+                EraseTextEntity(txtEntId);
             }
 
-            return true;
+            return curveIds;
         }
+
+        private List<ObjectId> ExplodeMTextToDbTexts(ObjectId mtextId)
+        {
+            var textIds = new List<ObjectId>();
+
+            using (var tran = _db.TransactionManager.StartTransaction())
+            {
+                var mtext = (MText)tran.GetObject(mtextId, OpenMode.ForWrite);
+                var dbObjects = new DBObjectCollection();
+                mtext.Explode(dbObjects);
+                var space=(BlockTableRecord)tran.GetObject(mtext.BlockId, OpenMode.ForWrite);
+                foreach (DBObject dbObject in dbObjects)
+                {
+                    if (dbObject is DBText)
+                    {
+                        var id = space.AppendEntity(dbObject as DBText);
+                        tran.AddNewlyCreatedDBObject(dbObject, true);
+                        textIds.Add(id);
+                    }
+                    else
+                    {
+                        dbObject.Dispose();
+                    }
+                }
+                mtext.Erase();
+                tran.Commit();
+            }
+
+            return textIds;
+        }
+
+        private void EraseTextEntity(ObjectId entId)
+        {
+            using (var tran = _db.TransactionManager.StartTransaction())
+            {
+                var txt = (DBText)tran.GetObject(entId, OpenMode.ForWrite);
+                txt.Erase();
+                tran.Commit();
+            }
+        }
+
+        #endregion
 
         #region private methods: epxort DBText as WMF image
 
@@ -153,7 +226,7 @@ namespace ExplodeText
         }
 
         private bool ExportWmfImage(
-            ObjectId txtId, out string wmfFileName, out string wmfFilePath)
+            ObjectId txtId, out string wmfFileName, out string wmfFilePath, out string layer, out double rotation)
         {
             var exportOk = true;
 
@@ -166,7 +239,7 @@ namespace ExplodeText
                 CadApp.SetSystemVariable("MIRRTEXT", 1);
 
                 exportOk = PrepareTextForExport(
-                    txtId, out _txtExtents, out Extents3d zoomExt, out _layer, out _rotation);
+                    txtId, out _txtExtents, out Extents3d zoomExt, out layer, out rotation);
                 if (exportOk)
                 {
                     using (var tempView = new WmfZoomedView(_ed, zoomExt))
@@ -250,7 +323,7 @@ namespace ExplodeText
                 ss.Delete();
                 if (hiddenEnts.Count>0)
                 {
-
+                    TurnOffEntities(hiddenEnts, true);
                 }
             }
 
@@ -260,9 +333,39 @@ namespace ExplodeText
         private List<ObjectId> HideExtraEntitiesInSelectionSet(dynamic selectionSet)
         {
             var ids=new List<ObjectId>();
+            foreach (dynamic ent in selectionSet)
+            {
+                string handleString = ent.Handle;
+                var handle=new Handle(long.Parse(handleString, System.Globalization.NumberStyles.HexNumber));
+                if (_db.TryGetObjectId(handle, out ObjectId id))
+                {
+                    var dxfName = id.ObjectClass.DxfName.ToUpper();
+                    if (dxfName!="TEXT" && dxfName!="MTEXT")
+                    {
+                        ids.Add(id);
+                    }
+                }
+            }
 
+            if (ids.Count>0)
+            {
+                TurnOffEntities(ids, false);
+            }
 
             return ids;
+        }
+
+        private void TurnOffEntities(List<ObjectId> entityIds, bool visible)
+        {
+            using (var tran = _db.TransactionManager.StartTransaction())
+            {
+                foreach (var id in entityIds)
+                {
+                    var ent = (Entity)tran.GetObject(id, OpenMode.ForWrite);
+                    ent.Visible = visible;
+                }
+                tran.Commit();
+            }
         }
 
         #endregion
@@ -304,9 +407,9 @@ namespace ExplodeText
 
         #region private methods: Convert imported WMF block into curves
 
-        private bool PostWmfImportWork()
+        private List<ObjectId> PostWmfImportWork()
         {
-            var ok = true;
+            List<ObjectId> curveIds = null;
             using (var tran = _db.TransactionManager.StartTransaction())
             {
                 var space=(BlockTableRecord)tran.GetObject(
@@ -315,8 +418,8 @@ namespace ExplodeText
                 if (wmfBlkRef!=null)
                 {
                     wmfBlkRef.UpgradeOpen();        
-                    ok = ConvertWmfBlockReferenceToCurves(wmfBlkRef, space, tran);
-                    if (ok)
+                    curveIds = ConvertWmfBlockReferenceToCurves(wmfBlkRef, space, tran);
+                    if (curveIds.Count>0)
                     {
                         try
                         {
@@ -333,13 +436,12 @@ namespace ExplodeText
                 {
                     _ed.WriteMessage(
                         $"\nCannot find imported WMF image block reference.");
-                    ok = false;
                 }
 
                 tran.Commit();
             }
 
-            return ok;
+            return curveIds;
         }
 
         private BlockReference FindWmfBlock(BlockTableRecord space, Transaction tran)
@@ -409,7 +511,7 @@ namespace ExplodeText
             return null;
         }
 
-        private bool ConvertWmfBlockReferenceToCurves(
+        private List<ObjectId> ConvertWmfBlockReferenceToCurves(
             BlockReference blkRef, BlockTableRecord space, Transaction tran)
         {
             // mirror and rotate the block reference before exploding it
@@ -430,8 +532,8 @@ namespace ExplodeText
             var mtScale = Matrix3d.Scaling(scale, wmfExtents.MinPoint);
             var mtMove = Matrix3d.Displacement(
                 wmfExtents.MinPoint.GetVectorTo(_txtExtents.MinPoint));
-            //var mtRotation = Matrix3d.Rotation(
-            //    _rotation, Vector3d.ZAxis, _txtExtents.MinPoint);
+            
+            var curveIds=new List<ObjectId>();
 
             foreach (var ent in ents)
             {
@@ -442,13 +544,14 @@ namespace ExplodeText
                 }
                 ent.TransformBy(mtScale);
                 ent.TransformBy(mtMove);
-                //ent.TransformBy(mtRotation);
 
-                space.AppendEntity(ent);
+                var curveId = space.AppendEntity(ent);
                 tran.AddNewlyCreatedDBObject(ent, true);
+
+                curveIds.Add(curveId);
             }
 
-            return true;
+            return curveIds;
         }
 
         private List<Entity> ExplodeWmfBlock(BlockReference blkRef, Transaction tran)

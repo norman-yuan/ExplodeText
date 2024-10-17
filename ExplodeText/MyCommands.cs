@@ -26,8 +26,20 @@ namespace ExplodeText
             var txtId = SelectText(editor);
             if (!txtId.IsNull)
             {
-                var exploder = new TextExploder();
-                exploder.ExplodeText(dwg, txtId, "", true);
+                List<ObjectId> explodedCurves;
+                var exploder = new TextExploder(dwg);
+                if (txtId.ObjectClass.DxfName.ToUpper() == "TEXT")
+                {
+                    explodedCurves = exploder.ExplodeDBText(txtId);
+                }
+                else
+                {
+                    explodedCurves = exploder.ExplodeMText(txtId);
+                }
+
+                // Do something with explosion-generated curves
+                editor.WriteMessage(
+                    $"\n{explodedCurves.Count} curves generated from text explodion.\n");
             }
             else
             {
@@ -40,7 +52,7 @@ namespace ExplodeText
         {
             var opt = new PromptEntityOptions(
                 "\nSelect a TEXT/MTEXT entity:");
-            opt.SetRejectMessage("\nInvalid: must be a TEXT entity.");
+            opt.SetRejectMessage("\nInvalid: must be a TEXT/MTEXT entity.");
             opt.AddAllowedClass(typeof(DBText), true);
             opt.AddAllowedClass(typeof(MText), true);
             var res = ed.GetEntity(opt);
